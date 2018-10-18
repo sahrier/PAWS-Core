@@ -7,40 +7,52 @@ COIN_DAEMON='pawsd'
 COIN_CLI='paws-cli'
 COIN_PATH='/usr/local/bin/'
 COIN_REPO='https://github.com/pawsfund/paws-core.git'
+COIN_TGZ='https://github.com/pawsfund/PAWS-Core/releases/download/v1.0.0.0/paws-1.0.0.0-x86_64-linux-gnu.zip'
+COIN_ZIP=$(echo $COIN_TGZ | awk -F'/' '{print $NF}')
 COIN_NAME='PAWS'
 COIN_PORT=34120
 RPC_PORT=34121
 
-NODEIP=$(curl -s4 api.ipify.org)
+NODEIP=$(curl -s4 icanhazip.com)
 
-
+BLUE="\033[0;34m"
+YELLOW="\033[0;33m"
+CYAN="\033[0;36m"
+PURPLE="\033[0;35m"
 RED='\033[0;31m'
-GREEN='\033[0;32m'
+GREEN="\033[0;32m"
 NC='\033[0m'
+MAG='\e[1;35m'
+
+purgeOldInstallation() {
+    echo -e "${GREEN}Searching and removing old $COIN_NAME files and configurations${NC}"
+    #kill wallet daemon
+    sudo killall pawsd > /dev/null 2>&1
+    sleep 5
+    #remove old ufw port allow
+    sudo ufw delete allow 34120/tcp > /dev/null 2>&1
+    #remove old files
+    if [ -d "~/.paws" ]; then
+        sudo rm -rf ~/.paws > /dev/null 2>&1
+    fi
+    #remove binaries
+    cd /usr/local/bin && sudo rm paws-cli pawsd > /dev/null 2>&1 && cd
+    echo -e "${GREEN}* Done${NONE}";
+}
 
 
-function compile_node() {
-  echo -e "Prepare to compile $COIN_NAME"
-  git clone $COIN_REPO $TMP_FOLDER >/dev/null 2>&1
-  compile_error
+function download_node() {
+  echo -e "${GREEN}Downloading and Installing VPS $COIN_NAME Daemon${NC}"
   cd $TMP_FOLDER >/dev/null 2>&1
-  chmod +x ./autogen.sh
-  chmod +x ./share/genbuild.sh
-  chmod +x src/leveldb/build_detect_platform
-  ./autogen.sh
+  wget -q $COIN_TGZ
   compile_error
-  ./configure
-  compile_error
-  make
-  compile_error
-  make install >/dev/null 2>&1
-  compile_error
-  strip $COIN_PATH$COIN_DAEMON $COIN_PATH$COIN_CLI
-  cd - >/dev/null 2>&1
+  unzip $COIN_ZIP >/dev/null 2>&1
+  chmod +x $COIN_DAEMON $COIN_CLI
+  cp $COIN_DAEMON $COIN_CLI $COIN_PATH
+  cd ~ >/dev/null 2>&1
   rm -rf $TMP_FOLDER >/dev/null 2>&1
   clear
 }
-
 
 function configure_systemd() {
   cat << EOF > /etc/systemd/system/$COIN_NAME.service
@@ -56,7 +68,7 @@ Type=forking
 #PIDFile=$CONFIGFOLDER/$COIN_NAME.pid
 
 ExecStart=$COIN_PATH$COIN_DAEMON -daemon -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER
-ExecStop=-$COIN_PATH$COIN_CLI -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER stop
+ExecStop=$COIN_PATH$COIN_CLI -conf=$CONFIGFOLDER/$CONFIG_FILE -datadir=$CONFIGFOLDER stop
 
 Restart=always
 PrivateTmp=true
@@ -83,6 +95,7 @@ EOF
   fi
 }
 
+
 function create_config() {
   mkdir $CONFIGFOLDER >/dev/null 2>&1
   RPCUSER=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w10 | head -n1)
@@ -90,6 +103,7 @@ function create_config() {
   cat << EOF > $CONFIGFOLDER/$CONFIG_FILE
 rpcuser=$RPCUSER
 rpcpassword=$RPCPASSWORD
+rpcport=$RPC_PORT
 rpcallowip=127.0.0.1
 listen=1
 server=1
@@ -98,42 +112,46 @@ port=$COIN_PORT
 EOF
 }
 
-
 function create_key() {
-  echo -e "Enter your ${RED}$COIN_NAME Masternode Private Key${NC}. Leave it blank to generate a new ${RED}Masternode Private Key${NC} for you:"
+  echo -e "${YELLOW}Enter your ${RED}$COIN_NAME Masternode GEN Key${NC}."
   read -e COINKEY
   if [[ -z "$COINKEY" ]]; then
-  $COIN_DAEMON -daemon
+  $COIN_PATH$COIN_DAEMON -daemon
   sleep 30
   if [ -z "$(ps axo cmd:100 | grep $COIN_DAEMON)" ]; then
    echo -e "${RED}$COIN_NAME server couldn not start. Check /var/log/syslog for errors.{$NC}"
    exit 1
   fi
-  COINKEY=$($COIN_CLI masternode genkey)
+  COINKEY=$($COIN_PATH$COIN_CLI masternode genkey)
   if [ "$?" -gt "0" ];
     then
-    echo -e "${RED}Wallet not fully loaded. Let us wait and try again to generate the Private Key${NC}"
+    echo -e "${RED}Wallet not fully loaded. Let us wait and try again to generate the GEN Key${NC}"
     sleep 30
-    COINKEY=$($COIN_CLI masternode genkey)
+    COINKEY=$($COIN_PATH$COIN_CLI masternode genkey)
   fi
-  $COIN_CLI stop
+  $COIN_PATH$COIN_CLI stop
 fi
 clear
 }
 
-
 function update_config() {
-  sed -i 's/daemon=1/daemon=0/' $CONFIGFOLDER/$CONFIG_FILE
+  sed -i 's/daemon=1/daemon=1/' $CONFIGFOLDER/$CONFIG_FILE
   cat << EOF >> $CONFIGFOLDER/$CONFIG_FILE
 logintimestamps=1
 maxconnections=256
-#bind=$NODEIP
+bind=$NODEIP
 masternode=1
 externalip=$NODEIP:$COIN_PORT
 masternodeprivkey=$COINKEY
-gen=0
-enablezeromint=0
+
+#ADDNODES
 addnode=140.82.52.205:34120
+addnode=45.32.145.142:34120
+addnode=95.179.200.213:34120
+addnode=45.63.10.156:34120
+addnode=144.202.53.246:34120
+addnode=104.207.130.217:34120
+addnode=45.77.5.22:34120
 EOF
 }
 
@@ -148,12 +166,11 @@ function enable_firewall() {
 }
 
 
-
 function get_ip() {
   declare -a NODE_IPS
   for ips in $(netstat -i | awk '!/Kernel|Iface|lo/ {print $1," "}')
   do
-    NODE_IPS+=($(curl --interface $ips --connect-timeout 2 -s4 api.ipify.org))
+    NODE_IPS+=($(curl --interface $ips --connect-timeout 2 -s4 icanhazip.com))
   done
 
   if [ ${#NODE_IPS[@]} -gt 1 ]
@@ -193,26 +210,27 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
-if [ -n "$(pidof $COIN_DAEMON)" ] || [ -e "$COIN_DAEMOM" ] ; then
+if [ -n "$(pidof $COIN_DAEMON)" ] || [ -e "$COIN_DAEMON" ] ; then
   echo -e "${RED}$COIN_NAME is already installed.${NC}"
   exit 1
 fi
 }
 
 function prepare_system() {
-echo -e "Prepare the system to install ${GREEN}$COIN_NAME${NC} master node."
+echo -e "Preparing the VPS to setup. ${CYAN}$COIN_NAME${NC} ${RED}Masternode${NC}"
 apt-get update >/dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt-get update > /dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -y -qq upgrade >/dev/null 2>&1
 apt install -y software-properties-common >/dev/null 2>&1
-echo -e "${GREEN}Adding bitcoin PPA repository"
+echo -e "${PURPLE}Adding bitcoin PPA repository"
 apt-add-repository -y ppa:bitcoin/bitcoin >/dev/null 2>&1
 echo -e "Installing required packages, it may take some time to finish.${NC}"
 apt-get update >/dev/null 2>&1
+apt-get install libzmq3-dev -y >/dev/null 2>&1
 apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" make software-properties-common \
 build-essential libtool autoconf libssl-dev libboost-dev libboost-chrono-dev libboost-filesystem-dev libboost-program-options-dev \
 libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git wget curl libdb4.8-dev bsdmainutils libdb4.8++-dev \
-libminiupnpc-dev libgmp3-dev ufw pkg-config libevent-dev  libdb5.3++ libzmq5 >/dev/null 2>&1
+libminiupnpc-dev libgmp3-dev ufw pkg-config libevent-dev  libdb5.3++ unzip libzmq5 >/dev/null 2>&1
 if [ "$?" -gt "0" ];
   then
     echo -e "${RED}Not all required packages were installed properly. Try to install them manually by running the following commands:${NC}\n"
@@ -222,11 +240,26 @@ if [ "$?" -gt "0" ];
     echo "apt-get update"
     echo "apt install -y make build-essential libtool software-properties-common autoconf libssl-dev libboost-dev libboost-chrono-dev libboost-filesystem-dev \
 libboost-program-options-dev libboost-system-dev libboost-test-dev libboost-thread-dev sudo automake git curl libdb4.8-dev \
-bsdmainutils libdb4.8++-dev libminiupnpc-dev libgmp3-dev ufw fail2ban pkg-config libevent-dev"
+bsdmainutils libdb4.8++-dev libminiupnpc-dev libgmp3-dev ufw pkg-config libevent-dev libdb5.3++ unzip libzmq5"
  exit 1
 fi
-
 clear
+}
+
+function important_information() {
+ echo
+ echo -e "$COIN_NAME Masternode is up and running listening on port ${GREEN}$COIN_PORT${NC}."
+ echo -e "Configuration file is: ${RED}$CONFIGFOLDER/$CONFIG_FILE${NC}"
+ echo -e "Start: ${RED}systemctl start $COIN_NAME.service${NC}"
+ echo -e "Stop: ${RED}systemctl stop $COIN_NAME.service${NC}"
+ echo -e "VPS_IP:PORT ${GREEN}$NODEIP:$COIN_PORT${NC}"
+ echo -e "MASTERNODE GENKEY is: ${RED}$COINKEY${NC}"
+ echo -e "Please check ${RED}$COIN_NAME${NC} is running with the following command: ${RED}systemctl status $COIN_NAME.service${NC}"
+ echo -e "Use ${RED}$COIN_CLI masternode status${NC} to check your MN."
+ if [[ -n $SENTINEL_REPO  ]]; then
+ echo -e "${RED}Sentinel${NC} is installed in ${RED}/root/sentinel_$COIN_NAME${NC}"
+ echo -e "Sentinel logs is: ${RED}$CONFIGFOLDER/sentinel.log${NC}"
+ fi
 }
 
 function create_swap() {
@@ -247,26 +280,13 @@ function create_swap() {
  clear
 }
 
-
-function important_information() {
- echo
- echo -e "================================================================================================================================"
- echo -e "$COIN_NAME Masternode is up and running listening on port ${RED}$COIN_PORT${NC}."
- echo -e "Configuration file is: ${RED}$CONFIGFOLDER/$CONFIG_FILE${NC}"
- echo -e "Start: ${RED}systemctl start $COIN_NAME.service${NC}"
- echo -e "Stop: ${RED}systemctl stop $COIN_NAME.service${NC}"
- echo -e "VPS_IP:PORT ${RED}$NODEIP:$COIN_PORT${NC}"
- echo -e "MASTERNODE PRIVATEKEY is: ${RED}$COINKEY${NC}"
- echo -e "Please check ${RED}$COIN_NAME${NC} is running with the following command: ${RED}systemctl status $COIN_NAME.service${NC}"
- echo -e "================================================================================================================================"
-}
-
 function setup_node() {
   get_ip
   create_config
   create_key
   update_config
   enable_firewall
+  #install_sentinel
   important_information
   configure_systemd
 }
@@ -275,8 +295,9 @@ function setup_node() {
 ##### Main #####
 clear
 
+#purgeOldInstallation
 checks
 prepare_system
 create_swap
-compile_node
+download_node
 setup_node
