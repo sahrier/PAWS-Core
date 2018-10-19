@@ -1,4 +1,4 @@
-![PAWS](https://github.com/altbet/abet/raw/master/src/qt/res/images/about.png)
+![PAWS]()
 
 <h2>What is PAWS?</h2>
 <p>PAWS is an open-source privacy focused digital currency based on Bitcoins blockchain technology, Dash’s Masternodes and Zerocoin’s Zerocash Protocol, combining them to create a powerful and innovative technology. PAWS is also powered by Blackcoin Proof-of-Stake 3.0 and Bitcoin Core 0.10x code base using Quark hashing algorithm with a block time of 60 seconds.
