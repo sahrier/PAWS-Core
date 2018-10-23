@@ -27,7 +27,7 @@ Masternodes require a collateral of 1,000 PAWS and can be run on the Tor network
 <tr><td><strong>PREMINE</strong></td><td>500 000 PAWS (2.38%)</td></tr>
 <tr><td><strong>COLLATERAL</strong></td><td>1 000 PAWS</td></tr>
 <tr><td><strong>BLOCKS PER DAY</strong></td><td>1 440</td></tr>
-<tr><td><strong>BLOCK REWARDong></td><td>1-9 PAWS</td></tr>
+<tr><td><strong>BLOCK REWARD</strong></td><td>1-9 PAWS</td></tr>
 <tr><td><strong>BLOCK TIME</strong></td><td>60 SECONDS</td></tr>
 <tr><td><strong>STAKE MIN AGE</strong></td><td>3 HOURS</td></tr>
 <tr><td><strong>REWARDS</strong></td><td>70-90% MASTERNODES<br>10% STAKING</td></tr>
